@@ -110,7 +110,7 @@ public class P2PNode {
     public void uploadFile(File file) {
         int hash = Math.abs(file.getName().hashCode()) % 32;
         logToGUI("[UPLOAD] Memulai upload '" + file.getName() + "' (Hash: " + hash + ")...");
-        routeOrProcessUpload(hash, this.id, file);
+        routeOrProcessUpload(hash, this.id, file, file.getName());
     }
     
     public void searchAndOpenFile(String fileName, boolean downloadToLocal) {
@@ -124,16 +124,18 @@ public class P2PNode {
     // LOGIKA ROUTING DHT (O(log n))
     // ==========================================
 
-    private void routeOrProcessUpload(int targetHash, int senderId, File file) {
+    private void routeOrProcessUpload(int targetHash, int senderId, File file, String originalFileName) {
         if (isMyHash(targetHash)) {
             // Targetnya adalah diri sendiri (local)
-            logToGUI("[RECEIVE] Menerima file '" + file.getName() + "' (Hash: " + targetHash + "). Menyimpan ke lokal...");
-            saveFileLocally(file, file.getName());
+            logToGUI("[RECEIVE] Menerima file '" + originalFileName + "' (Hash: " + targetHash + "). Menyimpan ke lokal...");
+            if (gui != null) gui.showRoutingAnimation(java.util.Arrays.asList(this.id, this.id));
+            saveFileLocally(file, originalFileName);
         } else {
             int nextHop = getNextHop(targetHash);
             logToGUI("[FORWARD] Meneruskan hash " + targetHash + " ke Node " + nextHop + " (IP: " + nodeIps.get(nextHop) + ")");
+            if (gui != null) gui.showRoutingAnimation(java.util.Arrays.asList(this.id, nextHop));
             try {
-                FileTransferHandler.sendFile(nodeIps.get(nextHop), 8000 + nextHop, "UPLOAD", targetHash, senderId, file);
+                FileTransferHandler.sendFile(nodeIps.get(nextHop), 8000 + nextHop, "UPLOAD", targetHash, senderId, file, originalFileName);
             } catch (IOException e) {
                 logToGUI("[ERROR] Gagal upload ke Node " + nextHop + " - " + e.getMessage());
             }
@@ -142,10 +144,12 @@ public class P2PNode {
     
     private void routeSearch(String action, int targetHash, int senderId, String fileName) {
         if (isMyHash(targetHash)) {
+            if (gui != null) gui.showRoutingAnimation(java.util.Arrays.asList(this.id, this.id));
             processSearchLocally(action, fileName, senderId);
         } else {
             int nextHop = getNextHop(targetHash);
             logToGUI("[TRANSIT] Menerima request Hash " + targetHash + ", meneruskan ke Successor Node " + nextHop + ".");
+            if (gui != null) gui.showRoutingAnimation(java.util.Arrays.asList(this.id, nextHop));
             try {
                 FileTransferHandler.sendRoutingMessage(nodeIps.get(nextHop), 8000 + nextHop, action, targetHash, senderId, fileName);
             } catch (IOException e) {
@@ -154,17 +158,24 @@ public class P2PNode {
         }
     }
 
-    private int getNextHop(int targetHash) {
+    public int getNextHop(int targetHash) {
         int successor = fingerTable[0].successor;
+        logToGUI("[ROUTING] Mencari target Hash " + targetHash + "...");
+        logToGUI("[ROUTING] Hash " + targetHash + " tidak ada di interval Node " + this.id + ".");
+        
         if (inRangeInclusiveRight(targetHash, this.id, successor)) {
+            logToGUI("[ROUTING] Hash " + targetHash + " masuk rentang Successor terdekat (Node " + successor + ").");
             return successor;
         }
+        
         for (int i = 4; i >= 0; i--) {
             int finger = fingerTable[i].successor;
             if (inRangeExclusive(finger, this.id, targetHash)) {
+                logToGUI("[ROUTING] Perhitungan O(log N): Hash " + targetHash + " ada di rentang Finger[" + i + "]. Lompat ke Node " + finger + ".");
                 return finger;
             }
         }
+        logToGUI("[ROUTING] Fallback ke Successor Node " + successor);
         return successor;
     }
 
@@ -176,14 +187,27 @@ public class P2PNode {
         File targetFile = new File(storageDir, fileName);
         if (!targetFile.exists()) {
             logToGUI("[ERROR] File '" + fileName + "' tidak ditemukan di storage lokal!");
+            if (senderId != this.id) { // Balas ke pengirim bahwa pencarian gagal
+                try {
+                    FileTransferHandler.sendRoutingMessage(nodeIps.get(senderId), 8000 + senderId, "SEARCH_NOT_FOUND", 0, this.id, fileName);
+                } catch (IOException e) {
+                    logToGUI("[ERROR] Gagal membalas pesan SEARCH_NOT_FOUND ke Node " + senderId);
+                }
+            } else {
+                if (gui != null) gui.showNeumorphicError("Pencarian Gagal!\nFile '" + fileName + "' tidak ada di Node ini.\nPastikan nama file dan ekstensi persis sama!");
+            }
             return;
         }
         
         logToGUI("[FOUND] File '" + fileName + "' ditemukan di Node ini!");
         
         if ("SEARCH_AND_OPEN_REMOTE".equals(action)) {
-            logToGUI("[OPEN] Membuka file secara otomatis...");
-            openFileInDesktop(targetFile);
+            logToGUI("[OPEN] Mengirim stream file sementara ke Node " + senderId + " untuk dibuka.");
+            try {
+                FileTransferHandler.sendFile(nodeIps.get(senderId), 8000 + senderId, "OPEN_REMOTE_RESPONSE", 0, this.id, targetFile);
+            } catch (IOException e) {
+                logToGUI("[ERROR] Gagal mengirim stream file ke Node " + senderId);
+            }
         } 
         else if ("SEARCH_AND_DOWNLOAD".equals(action)) {
             logToGUI("[DOWNLOAD] Mengirim kembali file fisik ke Node " + senderId + "...");
@@ -196,8 +220,67 @@ public class P2PNode {
     }
 
     // ==========================================
-    // UTILITAS
+    // UTILITAS & SIMULASI ROUTING
     // ==========================================
+    
+    public int getTargetNode(int targetHash) {
+        return findFirstActiveNode(targetHash);
+    }
+    
+    public String simulateRoutingPath(int targetHash) {
+        int targetNode = getTargetNode(targetHash);
+        if (targetNode == this.id) {
+            return "Node " + this.id + " (Lokal)";
+        }
+        
+        StringBuilder path = new StringBuilder();
+        path.append("Node ").append(this.id);
+        
+        int currentNode = this.id;
+        int maxJumps = 10; // Mencegah infinite loop jika ada bug
+        
+        while (currentNode != targetNode && maxJumps > 0) {
+            int nextHop = calculateNextHopForNode(currentNode, targetHash);
+            path.append(" ➔ Node ").append(nextHop);
+            currentNode = nextHop;
+            maxJumps--;
+        }
+        return path.toString();
+    }
+    
+    // Broadcast pesan teks (Log) ke semua node aktif
+    public void broadcastAnnouncement(String message) {
+        for (int n : activeNodes) {
+            if (n != this.id) {
+                try {
+                    FileTransferHandler.sendRoutingMessage(nodeIps.get(n), 8000 + n, "ANNOUNCEMENT", 0, this.id, message);
+                } catch (IOException e) {
+                    // Abaikan jika node lain offline
+                }
+            }
+        }
+    }
+    
+    private int calculateNextHopForNode(int nodeId, int targetHash) {
+        // Membangun Virtual Finger Table untuk node lain
+        int[] vFinger = new int[5];
+        for (int i = 1; i <= 5; i++) {
+            int start = (nodeId + (1 << (i - 1))) % 32;
+            vFinger[i - 1] = findFirstActiveNode(start);
+        }
+        
+        int successor = vFinger[0];
+        if (inRangeInclusiveRight(targetHash, nodeId, successor)) {
+            return successor;
+        }
+        for (int i = 4; i >= 0; i--) {
+            int finger = vFinger[i];
+            if (inRangeExclusive(finger, nodeId, targetHash)) {
+                return finger;
+            }
+        }
+        return successor;
+    }
     
     private void saveFileLocally(File sourceFile, String destName) {
         File destFile = new File(storageDir, destName);
@@ -215,20 +298,13 @@ public class P2PNode {
             }
         }
         logToGUI("[SUCCESS] Berhasil menyimpan file ke " + destFile.getAbsolutePath());
+        
+        // Umumkan ke seluruh jaringan bahwa file ini sekarang tersedia
+        broadcastAnnouncement("📢 [INFO GLOBAL] File baru tersedia untuk di-search: '" + destName + "' (Disimpan di Node " + this.id + ")");
+        
         if (gui != null) {
-            gui.addTableRow(destName, this.id, "Tersimpan", destFile.getAbsolutePath());
-        }
-    }
-    
-    private void openFileInDesktop(File file) {
-        try {
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().open(file);
-            } else {
-                logToGUI("[ERROR] Desktop API tidak didukung pada OS ini.");
-            }
-        } catch (IOException e) {
-            logToGUI("[ERROR] Gagal membuka aplikasi: " + e.getMessage());
+            int hash = Math.abs(destName.hashCode()) % 32;
+            gui.addTableRow(destName, hash, "Node " + this.id, simulateRoutingPath(hash), "Tersimpan Lokal", destFile.getAbsolutePath());
         }
     }
     
@@ -266,19 +342,44 @@ public class P2PNode {
                     logToGUI("[RECEIVE] Menerima unduhan file '" + fileName + "'.");
                     File destFile = receiveFileBytes(dis, fileName, fileSize);
                     logToGUI("[SUCCESS] File " + fileName + " tersimpan di node ini.");
-                    if (gui != null) gui.addTableRow(fileName, id, "Tersimpan (Download)", destFile.getAbsolutePath());
-                    openFileInDesktop(destFile);
+                    if (gui != null) {
+                        int hash = Math.abs(fileName.hashCode()) % 32;
+                        gui.addTableRow(fileName, hash, "Node " + senderId, simulateRoutingPath(hash), "Hasil Download", destFile.getAbsolutePath());
+                        gui.openFile(destFile);
+                    }
                 } 
+                else if ("OPEN_REMOTE_RESPONSE".equals(action)) {
+                    logToGUI("[RECEIVE] Menerima stream file '" + fileName + "' untuk dibuka (Remote View).");
+                    File tempFile = receiveFileBytes(dis, "TEMP_" + fileName, fileSize);
+                    tempFile.deleteOnExit(); // Dihapus otomatis oleh OS saat aplikasi ditutup
+                    if (gui != null) gui.openFile(tempFile);
+                }
+                else if ("SEARCH_NOT_FOUND".equals(action)) {
+                    logToGUI("[ERROR] Pencarian gagal: File '" + fileName + "' tidak ditemukan di jaringan P2P (Node " + senderId + " kosong).");
+                    if (gui != null) {
+                        gui.showNeumorphicError("Pencarian Gagal!\nFile '" + fileName + "' tidak ditemukan di jaringan.\n\nTips: Pastikan nama file beserta ekstensinya (misal: Laporan.pdf) SAMA PERSIS karena DHT menggunakan Exact Hash Match.");
+                    }
+                }
+                else if ("ANNOUNCEMENT".equals(action)) {
+                    // fileName digunakan sebagai payload teks pengumuman
+                    logToGUI(fileName);
+                }
                 else if (fileSize > 0 && "UPLOAD".equals(action)) {
                     if (isMyHash(targetHash)) {
                         logToGUI("[RECEIVE] Menerima file '" + fileName + "' (Hash: " + targetHash + "). Menyimpan ke lokal...");
                         File destFile = receiveFileBytes(dis, fileName, fileSize);
                         logToGUI("[SUCCESS] File " + fileName + " berhasil disimpan.");
-                        if (gui != null) gui.addTableRow(fileName, id, "Tersimpan", destFile.getAbsolutePath());
+                        
+                        // Umumkan ke seluruh jaringan bahwa file ini sekarang tersedia
+                        broadcastAnnouncement("📢 [INFO GLOBAL] File baru tersedia untuk di-search: '" + fileName + "' (Disimpan di Node " + id + ")");
+                        
+                        if (gui != null) {
+                            gui.addTableRow(fileName, targetHash, "Node " + id, "Node " + senderId + " ➔ Node " + id, "Tersimpan Remote", destFile.getAbsolutePath());
+                        }
                     } else {
                         logToGUI("[TRANSIT] Menerima stream file '" + fileName + "' (Hash: " + targetHash + "), meneruskan ke Successor Node...");
                         File tempFile = receiveFileBytes(dis, "temp_" + fileName, fileSize);
-                        routeOrProcessUpload(targetHash, senderId, tempFile);
+                        routeOrProcessUpload(targetHash, senderId, tempFile, fileName);
                         tempFile.delete(); // Bersihkan memori sementara
                     }
                 } 

@@ -1,2 +1,5 @@
 bin/
 storage_node_*/
+*.class
+nodes.txt
+temp_decrypted_node_*/

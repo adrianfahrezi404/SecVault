@@ -27,12 +27,13 @@ public class NodeGUI extends JFrame {
     
     private File selectedFile = null;
     private String masterKey;
+    private NeumorphicRingPanel ringPanel;
     
     // --- Palet Warna Neumorphism ---
-    private final Color baseColor = new Color(224, 229, 236);     // Abu-abu kebiruan terang (#E0E5EC)
-    private final Color darkShadow = new Color(163, 177, 198);    // Shadow Bawah-Kanan (#A3B1C6)
-    private final Color lightShadow = new Color(255, 255, 255);   // Highlight Atas-Kiri (#FFFFFF)
-    private final Color textColor = new Color(74, 85, 104);       // Teks abu-abu gelap (#4A5568)
+    private final Color baseColor = new Color(236, 240, 243);        // Clean Off-White
+    private final Color darkShadow = new Color(209, 217, 230);       // Soft Cool Grey
+    private final Color lightShadow = new Color(255, 255, 255);      // Pure White
+    private final Color textColor = Color.decode("#475569");         // Slate Gray
     
     public NodeGUI(P2PNode node) {
         this.node = node;
@@ -76,8 +77,12 @@ public class NodeGUI extends JFrame {
         txtFilename = new NeumorphicTextField(20);
         
         btnUpload = new NeumorphicButton("Upload");
-        btnSearchRemote = new NeumorphicButton("Search (Open)");
-        btnSearchDownload = new NeumorphicButton("Search (Download)");
+        
+        btnSearchRemote = new NeumorphicButton("Cari & Buka");
+        btnSearchRemote.setToolTipText("Cari file yang sudah dikirim dan buka langsung dari node tempat file tersebut tersimpan.");
+        
+        btnSearchDownload = new NeumorphicButton("Cari & Download");
+        btnSearchDownload.setToolTipText("Cari file yang sudah dikirim dan unduh (tarik) kembali ke laptop/node Anda ini.");
         
         inputPanel.add(btnPilih);
         inputPanel.add(txtFilename);
@@ -89,7 +94,7 @@ public class NodeGUI extends JFrame {
         rootPanel.add(topPanel, BorderLayout.NORTH);
         
         // --- Panel Tengah (Tabel JTable) ---
-        String[] columns = {"Nama File", "Lokasi Node", "Status", "Path"};
+        String[] columns = {"Nama File", "Hash", "Disimpan Di", "Jalur Routing", "Status", "Path"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
@@ -97,9 +102,15 @@ public class NodeGUI extends JFrame {
         table = new JTable(tableModel);
         styleTable(table);
         
-        table.getColumnModel().getColumn(3).setMinWidth(0);
-        table.getColumnModel().getColumn(3).setMaxWidth(0);
-        table.getColumnModel().getColumn(3).setWidth(0);
+        table.getColumnModel().getColumn(5).setMinWidth(0);
+        table.getColumnModel().getColumn(5).setMaxWidth(0);
+        table.getColumnModel().getColumn(5).setWidth(0);
+        
+        table.getColumnModel().getColumn(0).setPreferredWidth(120);
+        table.getColumnModel().getColumn(1).setPreferredWidth(50);
+        table.getColumnModel().getColumn(2).setPreferredWidth(80);
+        table.getColumnModel().getColumn(3).setPreferredWidth(250);
+        table.getColumnModel().getColumn(4).setPreferredWidth(100);
         
         JScrollPane scrollTable = new JScrollPane(table);
         scrollTable.setBorder(BorderFactory.createEmptyBorder());
@@ -109,7 +120,7 @@ public class NodeGUI extends JFrame {
         NeumorphicPanel panelCenter = new NeumorphicPanel(new BorderLayout());
         
         JLabel lblStatus = new JLabel("Encrypted Evidence Ledger (Klik ganda baris untuk Dekripsi Sementara)");
-        lblStatus.setFont(new Font("SansSerif", Font.BOLD, 15));
+        lblStatus.setFont(new Font("SansSerif", Font.BOLD, 13));
         lblStatus.setForeground(textColor);
         lblStatus.setBorder(new EmptyBorder(0, 0, 15, 0));
         
@@ -119,10 +130,13 @@ public class NodeGUI extends JFrame {
         // --- Panel Bawah (Log Console JTextArea) ---
         txtLog = new JTextArea(12, 40);
         txtLog.setEditable(false);
-        txtLog.setFont(new Font("Monospaced", Font.PLAIN, 14));
+        txtLog.setFont(new Font("Monospaced", Font.BOLD, 13));
         txtLog.setBackground(baseColor);
         txtLog.setForeground(textColor);
-        txtLog.setMargin(new Insets(10, 10, 10, 10));
+        txtLog.setBorder(null); // Menghilangkan border bawaan
+        txtLog.setMargin(new Insets(10, 15, 10, 15)); // Padding agar teks tidak mepet
+        txtLog.setLineWrap(true);
+        txtLog.setWrapStyleWord(true);
         
         JScrollPane scrollLog = new JScrollPane(txtLog);
         scrollLog.setBorder(BorderFactory.createEmptyBorder());
@@ -131,29 +145,81 @@ public class NodeGUI extends JFrame {
         NeumorphicPanel panelBottom = new NeumorphicPanel(new BorderLayout());
         
         JLabel lblLog = new JLabel("Log Aktivitas Jaringan");
-        lblLog.setFont(new Font("SansSerif", Font.BOLD, 16));
+        lblLog.setFont(new Font("SansSerif", Font.BOLD, 13));
         lblLog.setForeground(textColor);
         lblLog.setBorder(new EmptyBorder(0, 0, 15, 0));
         
         panelBottom.add(lblLog, BorderLayout.NORTH);
         panelBottom.add(scrollLog, BorderLayout.CENTER);
         
-        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, panelCenter, panelBottom);
-        splitPane.setDividerLocation(250);
-        splitPane.setDividerSize(20);
-        splitPane.setBorder(BorderFactory.createEmptyBorder());
-        splitPane.setBackground(baseColor);
+        JSplitPane splitPaneLeft = new JSplitPane(JSplitPane.VERTICAL_SPLIT, panelCenter, panelBottom);
+        splitPaneLeft.setDividerLocation(250);
+        splitPaneLeft.setDividerSize(20);
+        splitPaneLeft.setBorder(BorderFactory.createEmptyBorder());
+        splitPaneLeft.setBackground(baseColor);
         
         // Remove split pane borders
-        BasicSplitPaneUI splitPaneUI = (BasicSplitPaneUI) splitPane.getUI();
+        BasicSplitPaneUI splitPaneUI = (BasicSplitPaneUI) splitPaneLeft.getUI();
         splitPaneUI.getDivider().setBorder(BorderFactory.createEmptyBorder());
         
-        rootPanel.add(splitPane, BorderLayout.CENTER);
+        // --- TAMBAHAN RADAR & FINGER TABLE ---
+        ringPanel = new NeumorphicRingPanel();
         
-        // ==========================================
+        JPanel rightPanel = new JPanel(new BorderLayout(15, 15));
+        rightPanel.setBackground(baseColor);
+        rightPanel.setBorder(new EmptyBorder(0, 15, 0, 0));
+        rightPanel.add(ringPanel, BorderLayout.CENTER);
+        
+        // Tabel Finger Table
+        String[] ftCols = {"Index", "Start", "Interval", "Successor"};
+        DefaultTableModel ftModel = new DefaultTableModel(ftCols, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) { return false; }
+        };
+        JTable ftTable = new JTable(ftModel);
+        styleTable(ftTable);
+        JScrollPane ftScroll = new JScrollPane(ftTable);
+        ftScroll.setPreferredSize(new Dimension(300, 140));
+        ftScroll.setBorder(BorderFactory.createEmptyBorder());
+        
+        NeumorphicPanel ftContainer = new NeumorphicPanel(new BorderLayout());
+        JLabel lblFT = new JLabel("Tabel Routing (Finger Table DHT)");
+        lblFT.setFont(new Font("SansSerif", Font.BOLD, 13));
+        lblFT.setForeground(textColor);
+        lblFT.setBorder(new EmptyBorder(0, 0, 10, 0));
+        ftContainer.add(lblFT, BorderLayout.NORTH);
+        ftContainer.add(ftScroll, BorderLayout.CENTER);
+        
+        rightPanel.add(ftContainer, BorderLayout.SOUTH);
+        
+        // Isi data Finger Table (Dari Node) dengan Rumus Lengkap MIT Chord
+        if (node.fingerTable != null) {
+            for (int i = 0; i < node.fingerTable.length; i++) {
+                secvault.FingerTable ft = node.fingerTable[i];
+                if (ft != null) {
+                    int nextStart = (i == node.fingerTable.length - 1) ? node.id : node.fingerTable[i+1].start;
+                    String interval = "[" + ft.start + ", " + nextStart + ")";
+                    ftModel.addRow(new Object[]{i + 1, ft.start, interval, "Node " + ft.successor});
+                }
+            }
+        }
+        
+        // --- AUTO-PING UNTUK DETEKSI NODE MATI/HIDUP ---
+        startPingTimer();
+        
+        // Bagi layar menjadi Kiri (Tabel+Log) dan Kanan (Radar + FT)
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, splitPaneLeft, rightPanel);
+        mainSplit.setDividerLocation(500);
+        mainSplit.setDividerSize(20);
+        mainSplit.setBorder(BorderFactory.createEmptyBorder());
+        mainSplit.setBackground(baseColor);
+        
+        BasicSplitPaneUI mainSplitUI = (BasicSplitPaneUI) mainSplit.getUI();
+        mainSplitUI.getDivider().setBorder(BorderFactory.createEmptyBorder());
+        
+        rootPanel.add(mainSplit, BorderLayout.CENTER);
+        
         // EVENT LISTENERS
-        // ==========================================
-        
         btnPilih.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser();
             chooser.setDialogTitle("Pilih file fisik");
@@ -179,6 +245,7 @@ public class NodeGUI extends JFrame {
                         CryptoUtils.encryptStream(fis, fos, masterKey);
                     }
                     
+                    // --- P2PNode.routeOrProcessUpload akan mengurus animasi Radarnya secara otomatis ---
                     node.uploadFile(encryptedPayload); // Upload payload yang sudah terenkripsi AES
                 } catch (Exception ex) {
                     appendLog("[ERROR] Gagal mengenkripsi file: " + ex.getMessage());
@@ -211,7 +278,7 @@ public class NodeGUI extends JFrame {
                     JTable target = (JTable)me.getSource();
                     int row = target.getSelectedRow();
                     if (row != -1) {
-                        String filePath = (String) tableModel.getValueAt(row, 3);
+                        String filePath = (String) tableModel.getValueAt(row, 5);
                         if (filePath != null && !filePath.isEmpty()) {
                             openFile(new File(filePath));
                         }
@@ -256,26 +323,96 @@ public class NodeGUI extends JFrame {
         });
     }
     
-    public void addTableRow(String filename, int nodeId, String status, String filePath) {
+    public void addTableRow(String filename, int hash, String location, String routingPath, String status, String filePath) {
         SwingUtilities.invokeLater(() -> {
-            tableModel.addRow(new Object[]{filename, "Node " + nodeId, status, filePath});
+            tableModel.addRow(new Object[]{filename, hash, location, routingPath, status, filePath});
         });
     }
     
-    // ==========================================
-    // LOGIKA BUKA FILE CERDAS (Smart Viewer)
-    // ==========================================
+    public void showRoutingAnimation(java.util.List<Integer> path) {
+        SwingUtilities.invokeLater(() -> {
+            if (ringPanel != null) {
+                ringPanel.drawRoutingPath(path);
+            }
+        });
+    }
     
-    private void openFile(File file) {
+    // Guard supaya tidak ada beberapa pengecekan ping yang tumpang tindih (overlap)
+    private final java.util.concurrent.atomic.AtomicBoolean isPingingNow =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    // Thread pool khusus untuk ping paralel ke semua node (dibuat sekali, dipakai berulang)
+    private final java.util.concurrent.ExecutorService pingExecutor =
+            java.util.concurrent.Executors.newFixedThreadPool(6);
+
+    private void startPingTimer() {
+        // Melakukan ping ke semua IP node setiap 3 detik secara background
+        javax.swing.Timer timer = new javax.swing.Timer(3000, e -> {
+            // Kalau pengecekan sebelumnya masih berjalan, lewati tick ini
+            if (!isPingingNow.compareAndSet(false, true)) {
+                return;
+            }
+
+            java.util.List<java.util.concurrent.Future<Integer>> futures = new java.util.ArrayList<>();
+
+            for (java.util.Map.Entry<Integer, String> entry : node.nodeIps.entrySet()) {
+                int id = entry.getKey();
+                String ip = entry.getValue();
+
+                futures.add(pingExecutor.submit(() -> {
+                    if (id == node.id) {
+                        return id; // Diri sendiri selalu aktif
+                    }
+                    try (java.net.Socket s = new java.net.Socket()) {
+                        // Coba buka socket koneksi (Ping) dengan timeout lebih longgar (2000ms) untuk Hotspot HP
+                        s.connect(new java.net.InetSocketAddress(ip, 8000 + id), 2000);
+                        return id;
+                    } catch (Exception ex) {
+                        return null; 
+                    }
+                }));
+            }
+
+            new Thread(() -> {
+                java.util.List<Integer> onlineNodes = new java.util.ArrayList<>();
+                for (java.util.concurrent.Future<Integer> f : futures) {
+                    try {
+                        // Beri waktu toleransi nunggu hasil hingga 2.5 detik (2500ms)
+                        Integer result = f.get(2500, java.util.concurrent.TimeUnit.MILLISECONDS);
+                        if (result != null) onlineNodes.add(result);
+                    } catch (Exception ex) {
+                        // Timeout/error pada task individual, anggap node itu offline
+                    }
+                }
+
+                SwingUtilities.invokeLater(() -> {
+                    if (ringPanel != null) {
+                        ringPanel.setOnlineNodes(onlineNodes);
+                    }
+                });
+
+                isPingingNow.set(false);
+            }).start();
+        });
+        timer.start();
+    }
+    
+    // LOGIKA BUKA FILE CERDAS (Smart Viewer)
+    public void openFile(File file) {
         if (!file.exists()) {
             appendLog("[ERROR] Evidence fisik tidak ditemukan: " + file.getAbsolutePath());
             return;
         }
 
         try {
-            // Lakukan Dekripsi ke Temporary File
-            File tempDecrypted = File.createTempFile("evidence_", "_" + file.getName());
-            tempDecrypted.deleteOnExit(); // Sangat Penting: Lenyapkan saat aplikasi ditutup
+            // Lakukan Dekripsi ke Temporary File di direktori proyek lokal
+            // (Linux Snap apps seperti VLC tidak memiliki izin membaca folder /tmp/ bawaan OS)
+            File secureDir = new File("./temp_decrypted_node_" + node.id);
+            secureDir.mkdirs();
+            secureDir.deleteOnExit();
+            
+            File tempDecrypted = new File(secureDir, "EVIDENCE_" + file.getName());
+            tempDecrypted.deleteOnExit(); // Lenyapkan saat aplikasi ditutup
             
             try (java.io.FileInputStream fis = new java.io.FileInputStream(file);
                  java.io.FileOutputStream fos = new java.io.FileOutputStream(tempDecrypted)) {
@@ -285,14 +422,40 @@ public class NodeGUI extends JFrame {
             // Baca nama asli file untuk smart viewer logic
             String name = file.getName().toLowerCase();
             if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg")) {
-                new ImagePreviewDialog(this, tempDecrypted).setVisible(true);
+                new ImagePreviewDialog(tempDecrypted).setVisible(true);
                 appendLog("[DECRYPT] Menampilkan pratinjau bukti: " + file.getName());
             } else {
+                boolean opened = false;
                 if (Desktop.isDesktopSupported()) {
-                    Desktop.getDesktop().open(tempDecrypted);
-                    appendLog("[DECRYPT] Mendelegasikan dekripsi bukti " + file.getName() + " ke aplikasi OS.");
-                } else {
-                    showNeumorphicError("Sistem operasi Anda tidak mendukung fitur Desktop API.");
+                    try {
+                        Desktop.getDesktop().open(tempDecrypted);
+                        appendLog("[DECRYPT] Mendelegasikan dekripsi bukti " + file.getName() + " ke aplikasi OS.");
+                        opened = true;
+                    } catch (Exception e) {
+                        // Gagal via Desktop API (Sering terjadi bug URI %20 di Linux GNOME)
+                    }
+                }
+                
+                if (!opened) {
+                    // Fallback Manual
+                    String os = System.getProperty("os.name").toLowerCase();
+                    if (os.contains("linux")) {
+                        if (name.endsWith(".mp3") || name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".webm") || name.endsWith(".ogg")) {
+                            Runtime.getRuntime().exec(new String[]{"firefox", tempDecrypted.getAbsolutePath()});
+                            appendLog("[DECRYPT] Membuka media via Firefox: " + file.getName());
+                        } else {
+                            Runtime.getRuntime().exec(new String[]{"xdg-open", tempDecrypted.getAbsolutePath()});
+                            appendLog("[DECRYPT] Membuka via xdg-open: " + file.getName());
+                        }
+                    } else if (os.contains("mac")) {
+                        Runtime.getRuntime().exec(new String[]{"open", tempDecrypted.getAbsolutePath()});
+                        appendLog("[DECRYPT] Membuka via open (Mac): " + file.getName());
+                    } else if (os.contains("win")) {
+                        Runtime.getRuntime().exec(new String[]{"cmd", "/c", "start", "\"\"", tempDecrypted.getAbsolutePath()});
+                        appendLog("[DECRYPT] Membuka via CMD: " + file.getName());
+                    } else {
+                        showNeumorphicError("Sistem operasi Anda tidak mendukung fitur untuk membuka file ini secara otomatis.");
+                    }
                 }
             }
         } catch (Exception ex) {
@@ -300,7 +463,7 @@ public class NodeGUI extends JFrame {
         }
     }
     
-    private void showNeumorphicError(String message) {
+    public void showNeumorphicError(String message) {
         JDialog dialog = new JDialog(this, "Peringatan Sistem", true);
         dialog.setSize(450, 220);
         dialog.setLocationRelativeTo(this);
@@ -308,7 +471,7 @@ public class NodeGUI extends JFrame {
         
         NeumorphicPanel rootPanel = new NeumorphicPanel(new BorderLayout(15, 15));
         
-        JLabel lblMsg = new JLabel("<html><div style='text-align: center; color: #4A5568'>" + message.replace("\n", "<br>") + "</div></html>");
+        JLabel lblMsg = new JLabel("<html><div style='text-align: center; color: #2C3E50; width: 350px;'>" + message.replace("\n", "<br>") + "</div></html>");
         lblMsg.setFont(new Font("SansSerif", Font.BOLD, 14));
         lblMsg.setHorizontalAlignment(SwingConstants.CENTER);
         
@@ -327,10 +490,7 @@ public class NodeGUI extends JFrame {
         dialog.setVisible(true);
     }
     
-    // ==========================================
     // CLASS UI NEUMORPHISM
-    // ==========================================
-
     class NeumorphicPanel extends JPanel {
         private int shadowSize = 8;
         private int radius = 25;
@@ -375,8 +535,8 @@ public class NodeGUI extends JFrame {
 
         public NeumorphicButton(String text) {
             super(text);
-            setForeground(textColor);
-            setFont(new Font("SansSerif", Font.BOLD, 14));
+            setForeground(Color.decode("#334155"));
+            setFont(new Font("SansSerif", Font.BOLD, 12));
             setCursor(new Cursor(Cursor.HAND_CURSOR));
             setContentAreaFilled(false);
             setFocusPainted(false);
@@ -437,8 +597,8 @@ public class NodeGUI extends JFrame {
         public NeumorphicTextField(int columns) {
             super(columns);
             setOpaque(false);
-            setForeground(textColor);
-            setFont(new Font("SansSerif", Font.PLAIN, 15));
+            setForeground(Color.decode("#334155"));
+            setFont(new Font("SansSerif", Font.BOLD, 13));
             setBorder(new EmptyBorder(shadowSize + 8, shadowSize + 15, shadowSize + 8, shadowSize + 15));
             setBackground(new Color(0, 0, 0, 0)); // Transparent so paintComponent handles it
         }
@@ -477,7 +637,7 @@ public class NodeGUI extends JFrame {
     class CustomScrollBarUI extends javax.swing.plaf.basic.BasicScrollBarUI {
         @Override
         protected void configureScrollBarColors() {
-            this.thumbColor = baseColor.darker();
+            this.thumbColor = new Color(180, 190, 200);
             this.trackColor = baseColor;
         }
         @Override
@@ -501,19 +661,17 @@ public class NodeGUI extends JFrame {
             if (thumbBounds.isEmpty() || !scrollbar.isEnabled()) return;
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2.setColor(new Color(163, 177, 198, 100)); // Warna bayangan yang sangat transparan
+            g2.setColor(new Color(150, 160, 170, 100)); // Warna bayangan yang sangat transparan
             g2.fillRoundRect(thumbBounds.x, thumbBounds.y, thumbBounds.width, thumbBounds.height, 10, 10);
             g2.dispose();
         }
     }
-    
-    // ==========================================
-    // JDIALOG CUSTOM IMAGE PREVIEW
-    // ==========================================
 
-    class ImagePreviewDialog extends JDialog {
-        public ImagePreviewDialog(Frame owner, File imageFile) {
-            super(owner, "Pratinjau Gambar Neumorphism", true);
+    // JFRAME CUSTOM IMAGE PREVIEW (Bisa Minimize & Maximize)
+    class ImagePreviewDialog extends JFrame {
+        public ImagePreviewDialog(File imageFile) {
+            super("Pratinjau Gambar Neumorphism - " + imageFile.getName());
+            setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
             getContentPane().setBackground(baseColor);
             
             NeumorphicPanel rootPanel = new NeumorphicPanel(new BorderLayout(10, 10));
@@ -564,7 +722,7 @@ public class NodeGUI extends JFrame {
             rootPanel.add(bottomPanel, BorderLayout.SOUTH);
             
             setContentPane(rootPanel);
-            setLocationRelativeTo(owner);
+            setLocationRelativeTo(null);
         }
     }
 }

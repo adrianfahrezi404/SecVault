@@ -15,6 +15,10 @@ public class FileTransferHandler {
      * @param file Objek File fisik yang akan dikirim
      */
     public static void sendFile(String ip, int port, String action, int targetHash, int senderId, File file) throws IOException {
+        sendFile(ip, port, action, targetHash, senderId, file, file.getName());
+    }
+
+    public static void sendFile(String ip, int port, String action, int targetHash, int senderId, File file, String originalFileName) throws IOException {
         try (Socket socket = new Socket(ip, port);
              DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
              FileInputStream fis = new FileInputStream(file)) {
@@ -23,7 +27,7 @@ public class FileTransferHandler {
             dos.writeUTF(action);
             dos.writeInt(targetHash);
             dos.writeInt(senderId);
-            dos.writeUTF(file.getName());
+            dos.writeUTF(originalFileName);
             dos.writeLong(file.length());
             
             // 2. Kirim Byte Stream Fisik File
